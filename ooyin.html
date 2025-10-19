@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elementlar Jangi — Koinot Versiyasi</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 30%, #0a0a1a, #000);
+    color: white;
+    font-family: "Segoe UI", sans-serif;
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: radial-gradient(ellipse at center, #020617 0%, #000 100%);
+  }
+  #hud {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  #hpBar {
+    width: 250px;
+    height: 22px;
+    border: 2px solid #fff;
+    margin: 10px auto;
+    border-radius: 5px;
+    background: #1e293b;
+    overflow: hidden;
+  }
+  #hpFill {
+    height: 100%;
+    background: linear-gradient(90deg, #22d3ee, #0284c7);
+    width: 100%;
+    transition: width 0.2s;
+  }
+  #elements {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0,0,0,0.4);
+    border-radius: 10px;
+    padding: 10px;
+  }
+  .el {
+    font-size: 22px;
+    margin: 6px 0;
+    opacity: 0.5;
+  }
+  .el.active {
+    opacity: 1;
+    text-shadow: 0 0 10px white;
+  }
+</style>
+</head>
+<body>
+  <div id="hud">
+    <h2>🌌 Elementlar Jangi: Koinot Versiyasi</h2>
+    <p>WASD — harakat | O‘qlar — burish | Space — otish | Q — Qobiliyat</p>
+    <div id="hpBar"><div id="hpFill"></div></div>
+  </div>
+
+  <div id="elements">
+    <div class="el" id="el-water">💧 Suv</div>
+    <div class="el" id="el-fire">🔥 Olov</div>
+    <div class="el" id="el-wind">🌪️ Shamol</div>
+    <div class="el" id="el-earth">🪨 Yer</div>
+  </div>
+
+  <canvas id="game" width="900" height="550"></canvas>
+
+  <script>
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const hpFill = document.getElementById("hpFill");
+
+  const player = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    r: 15,
+    rotation: 0,
+    color: "cyan",
+    speed: 4,
+    hp: 400,
+    maxHp: 400,
+    shooting: true,
+    shield: false,
+    element: "water"
+  };
+
+  const bullets = [];
+  const enemies = [];
+  const stars = [];
+  for (let i = 0; i < 120; i++) {
+    stars.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.5,
+      speed: 0.3 + Math.random() * 0.4
+    });
+  }
+
+  const elementColors = {
+    water: "cyan",
+    fire: "orange",
+    wind: "white",
+    earth: "yellow"
+  };
+
+  const keys = {};
+  let shootCooldown = 0;
+  let regenTimer = 0;
+  let missedEnemies = 0;
+
+  window.addEventListener("keydown", (e) => {
+    keys[e.key.toLowerCase()] = true;
+    if (e.code === "Space") player.shooting = !player.shooting;
+    if (e.key === "q") activateAbility();
+  });
+  window.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
+
+  function updateElementsDisplay() {
+    document.querySelectorAll(".el").forEach(el => el.classList.remove("active"));
+    document.getElementById("el-" + player.element).classList.add("active");
+  }
+
+  function spawnEnemy() {
+    const side = Math.floor(Math.random() * 4);
+    let x, y;
+    if (side === 0) { x = 0; y = Math.random() * canvas.height; }
+    else if (side === 1) { x = canvas.width; y = Math.random() * canvas.height; }
+    else if (side === 2) { x = Math.random() * canvas.width; y = 0; }
+    else { x = Math.random() * canvas.width; y = canvas.height; }
+
+    enemies.push({
+      x, y,
+      r: 18 + Math.random() * 10,
+      dx: 0,
+      dy: 0,
+      angle: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.05
+    });
+  }
+
+  function shoot() {
+    const dx = Math.cos(player.rotation);
+    const dy = Math.sin(player.rotation);
+    bullets.push({
+      x: player.x + dx * player.r,
+      y: player.y + dy * player.r,
+      dx: dx * 9,
+      dy: dy * 9,
+      color: elementColors[player.element]
+    });
+  }
+
+  function activateAbility() {
+    if (player.element === "water") {
+      player.shield = true;
+      setTimeout(() => (player.shield = false), 5000);
+    } else if (player.element === "fire") {
+      for (let i = 0; i < 30; i++) {
+        const angle = (Math.PI * 2 / 30) * i;
+        bullets.push({
+          x: player.x,
+          y: player.y,
+          dx: Math.cos(angle) * 6,
+          dy: Math.sin(angle) * 6,
+          color: "orange"
+        });
+      }
+    } else if (player.element === "wind") {
+      player.speed = 7;
+      setTimeout(() => (player.speed = 4), 5000);
+    } else if (player.element === "earth") {
+      player.hp = Math.min(player.maxHp, player.hp + 100);
+    }
+  }
+
+  function update() {
+    // Yulduzlar
+    for (let s of stars) {
+      s.y += s.speed;
+      if (s.y > canvas.height) {
+        s.y = 0; s.x = Math.random() * canvas.width;
+      }
+    }
+
+    // Harakat
+    if (keys["w"]) player.y -= player.speed;
+    if (keys["s"]) player.y += player.speed;
+    if (keys["a"]) player.x -= player.speed;
+    if (keys["d"]) player.x += player.speed;
+    if (keys["arrowleft"]) player.rotation -= 0.07;
+    if (keys["arrowright"]) player.rotation += 0.07;
+
+    shootCooldown--;
+    if (player.shooting && shootCooldown <= 0) {
+      shoot();
+      shootCooldown = 10;
+    }
+
+    // O‘qlar
+    for (let b of bullets) {
+      b.x += b.dx;
+      b.y += b.dy;
+    }
+
+    // Dushmanlar
+    for (let e of enemies) {
+      const dx = player.x - e.x;
+      const dy = player.y - e.y;
+      const len = Math.hypot(dx, dy);
+      e.dx = (dx / len) * 0.9;
+      e.dy = (dy / len) * 0.9;
+      e.x += e.dx;
+      e.y += e.dy;
+      e.angle += e.rotSpeed;
+    }
+
+    // To‘qnashuv
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      for (let j = bullets.length - 1; j >= 0; j--) {
+        const b = bullets[j];
+        if (Math.hypot(b.x - e.x, b.y - e.y) < e.r) {
+          enemies.splice(i, 1);
+          bullets.splice(j, 1);
+          break;
+        }
+      }
+      // O‘yinchiga tegsa
+      if (Math.hypot(e.x - player.x, e.y - player.y) < e.r + player.r) {
+        if (!player.shield) player.hp -= 0.5;
+      }
+      // Chetdan chiqsa
+      if (e.x < -50 || e.x > canvas.width + 50 || e.y < -50 || e.y > canvas.height + 50) {
+        enemies.splice(i, 1);
+        missedEnemies++;
+        if (missedEnemies % 10 === 0) player.hp -= 10; // 🔹 10 ta o'tganda 1 jon kamayadi
+      }
+    }
+
+    // Regeneratsiya
+    regenTimer++;
+    if (regenTimer >= 30) {
+      player.hp = Math.min(player.maxHp, player.hp + 1);
+      regenTimer = 0;
+    }
+
+    if (Math.random() < 0.02) spawnEnemy();
+
+    hpFill.style.width = (player.hp / player.maxHp) * 100 + "%";
+    if (player.hp <= 0) {
+      alert("💀 O‘yin tugadi!");
+      document.location.reload();
+    }
+
+    updateElementsDisplay();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Fon (yulduzlar)
+    ctx.fillStyle = "white";
+    for (let s of stars) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // O‘yinchi (raketa)
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.rotation);
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    ctx.moveTo(player.r, 0);
+    ctx.lineTo(-player.r / 1.3, player.r / 1.3);
+    ctx.lineTo(-player.r / 1.3, -player.r / 1.3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Qalqon
+    if (player.shield) {
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.r + 10, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(0,255,255,0.4)";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // O‘qlar
+    for (let b of bullets) {
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = b.color;
+      ctx.fill();
+    }
+
+    // Asteroidlar
+    for (let e of enemies) {
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.rotate(e.angle);
+      ctx.strokeStyle = "#a78bfa";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const ang = (Math.PI * 2 / 6) * i;
+        const radius = e.r + Math.sin(i * 2) * 3;
+        const x = Math.cos(ang) * radius;
+        const y = Math.sin(ang) * radius;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+  loop();
+  </script>
+</body>
+</html>
